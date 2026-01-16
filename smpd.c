@@ -1,7 +1,10 @@
 /*
 
+smpd-> handles one client connection at a time sent by mpiex.c
 
-Iterative Server: handles one client connection at a time
+usage:
+gcc smpd.c -o smpd
+./smpd <port number>
 
 */
 
@@ -86,7 +89,7 @@ void handle_client(int new_sd)
 
         if (bytes <= 0)
         {
-            break; // client closed or error
+            break; 
         }
         printf("Received:%s\n", rec_buffer);
 
@@ -125,7 +128,6 @@ int main(int argc, char *argv[])
     int client_len = sizeof(client);
     int port = atoi(argv[1]);
 
-    // Create server socket (listening socket)
     if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("socket");
@@ -136,12 +138,10 @@ int main(int argc, char *argv[])
     atexit(clean);
     signal(SIGINT,exit);
 
-    // Bind address/port
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = htonl(INADDR_ANY);
     server.sin_port = htons(port);
 
-    // bind address of server socket
     if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
     {
         perror("bind");
@@ -149,7 +149,6 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    // Listen for clients, set backlog=5
     if (listen(sd, 5) == -1)
     {
         perror("listen");
@@ -159,11 +158,9 @@ int main(int argc, char *argv[])
 
     printf("Server started on port %d\n", port);
 
-    // Main loop: accept clients sequentially
     while (1)
     {
 
-        // Accept a client, get new_sd the communication socket
         new_sd = accept(sd, (struct sockaddr *)&client, &client_len);
         if (new_sd == -1)
         {
@@ -171,7 +168,6 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        // only for printing: convert binary address in string ddd.ddd.ddd.ddd
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client.sin_addr, ip_str, INET_ADDRSTRLEN);
         printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");

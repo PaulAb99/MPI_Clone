@@ -15,6 +15,7 @@ gcc mpiex.c -o mpiex
 #include <arpa/inet.h>
 
 #define BUFFER_SIZE 4096
+#define MAX_PORT_NB 49151 - 1024
 int remote_host = 0; // host mode 1/process mode 0
 int N;
 
@@ -25,9 +26,9 @@ void parse_cmd_args(int argc, char **argv)
 {
 
     N = atoi(argv[2]);
-    if (N <= 0 || N > (49150 - 1024))
+    if (N <= 0 || N > (MAX_PORT_NB))
     {
-        fprintf(stderr, "N must be a positive number lower than %d so it can be registered\n", 49150 - 1024);
+        fprintf(stderr, "N must be a positive number lower than %d so it can be registered\n", MAX_PORT_NB);
         exit(1);
     }
     server_addr = malloc(N * sizeof(struct sockaddr_in));
@@ -51,25 +52,42 @@ void parse_cmd_args(int argc, char **argv)
 
     int port;
     for (int i = 0; i < N; i++) // add data to server struct
-    {
+    {   
+        //process nb 
+        int proc_pos=4 + i * 2;
+        proc_num_arr[i] = atoi(argv[proc_pos]);
+
+        //address port
+        
         server_addr[i].sin_family = AF_INET;
-        proc_num_arr[i] = atoi(argv[4 + i * 2]);
         server_addr[i].sin_addr.s_addr = htonl(INADDR_ANY);
+    
+        int port_pos=3 + i * 2;
+
         if (remote_host)
-        {
-            char *ip_str = strtok(argv[3 + i * 2], ":");
-            char *port_str = strtok(NULL, ":");
+        {   
+            char tmp[64];
+            strcpy(tmp, argv[port_pos]);
+            tmp[sizeof(tmp) - 1] = '\0';
+
+            char *ip_str = strtok(tmp, ":");
+            char *port_str = strtok(NULL, " ");
+
             port = atoi(port_str);
             server_addr[i].sin_port = htons(port);
+
             inet_pton(AF_INET, ip_str, &server_addr[i].sin_addr);
-                printf("%s:%d will launch %d copies of %s\n", ip_str, port, proc_num_arr[i], argv[argc - 1]);
+
+            printf("%s:%d will launch %d copies of %s\n", ip_str, port, proc_num_arr[i], argv[argc - 1]);
         }
         else
         {
-            port = atoi(argv[3 + i * 2]);
+            port = atoi(argv[port_pos]);
             server_addr[i].sin_port = htons(port);
+
             inet_pton(AF_INET, "127.0.0.1", &server_addr[i].sin_addr);
-                printf("127.0.0.1:%d will launch %d copies of %s\n", port, proc_num_arr[i], argv[argc - 1]);
+            
+            printf("127.0.0.1:%d will launch %d copies of %s\n", port, proc_num_arr[i], argv[argc - 1]);
         }
     }
 }
@@ -77,7 +95,6 @@ void parse_cmd_args(int argc, char **argv)
 int connect_to_server(int nb)
 {
     int sock_fd;
-    int server_ip;
     // Create socket
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
@@ -85,12 +102,12 @@ int connect_to_server(int nb)
         return sock_fd;
     }
 
-    char ip_str[16];
-    inet_ntop(AF_INET,&server_addr[nb].sin_addr,ip_str,sizeof(ip_str));
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &server_addr[nb].sin_addr, ip_str, sizeof(ip_str));
     // Connect to server
-    if (connect(sock_fd, (struct sockaddr *)&server_addr[nb], sizeof(struct sockaddr)) == -1)
-    {   
-        
+    if (connect(sock_fd, (struct sockaddr *)&server_addr[nb], sizeof(struct sockaddr_in)) == -1)
+    {
+
         printf("~~~ Connection to server %s:%d failed ~~~\n", ip_str, ntohs(server_addr[nb].sin_port));
         close(sock_fd);
         return -1;
@@ -101,8 +118,9 @@ int connect_to_server(int nb)
 }
 
 int main(int argc, char *argv[])
-{
-    if (argc < 6 || argc != (atoi(argv[2]) * 2 + 4) || argc >(49150 - 1024)) // 2do more robustly
+{   
+    int N_expected=atoi(argv[2]) * 2 + 4;
+    if (argc < 6 || argc != N_expected|| argc > (MAX_PORT_NB)) // 2do more robustly
     {
         fprintf(stderr, "Usage 1: %s -hosts N IP1 N1 IP2 N2 ....  IP_N N_N your_program.exe\n", argv[0]);
         fprintf(stderr, "Usage 2: %s -processes N port_1 N1 port_2 N2 .... port_N N_N your_program.exe\n", argv[0]);
@@ -110,9 +128,9 @@ int main(int argc, char *argv[])
     }
 
     parse_cmd_args(argc, argv);
-
     char *target_program = argv[argc - 1];
 
+    // send to smpd servers
     for (int i = 0; i < N; i++)
     {
         int sock_fd;
@@ -123,20 +141,25 @@ int main(int argc, char *argv[])
         {
             continue;
         }
-
-        snprintf(sendbuf,sizeof(sendbuf),"%s %d\n", target_program, proc_num_arr[i]);
+        
+        //send rec logic
+        snprintf(sendbuf, sizeof(sendbuf), "%s %d\n", target_program, proc_num_arr[i]);
         sendbuf[BUFFER_SIZE - 1] = '\0';
         send(sock_fd, sendbuf, strlen(sendbuf), 0);
 
+        memset(recbuf, 0, BUFFER_SIZE);
         ssize_t bytes = recv(sock_fd, recbuf, BUFFER_SIZE - 1, 0);
+
         if (bytes <= 0)
         {
             printf("Server closed connection.\n");
+            close(sock_fd);
             continue;
         }
 
         recbuf[bytes] = '\0';
         printf("Received:\n%s", recbuf);
+
         close(sock_fd);
     }
 
