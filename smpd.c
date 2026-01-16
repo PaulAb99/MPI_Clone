@@ -12,9 +12,11 @@ Iterative Server: handles one client connection at a time
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-
+#include <signal.h>
 #define BUFFER_SIZE 4096
 #define TEMP_BUFFER_SIZE 256
+
+int sd_global=-1;
 
 void run_task(char *recBuf, char *sendBuf)
 {
@@ -46,17 +48,20 @@ void run_task(char *recBuf, char *sendBuf)
 
             execlp(path, path, NULL);
 
+            close(pipefd[0]);
+            close(pipefd[1]);
             perror("execl");
             exit(1);
         }
     }
     close(pipefd[1]);
     char temp[TEMP_BUFFER_SIZE];
- 
-    while ((read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
+    int n;
+    while ((n=read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
     {   
-        int remain = BUFFER_SIZE - strlen(sendBuf) - 1;
-        strncat(sendBuf, temp, TEMP_BUFFER_SIZE);
+        temp[n] = '\0';
+        int remaining = BUFFER_SIZE - strlen(sendBuf) - 1;
+        strncat(sendBuf, temp, remaining);
     }
 
     close(pipefd[0]);
@@ -83,14 +88,27 @@ void handle_client(int new_sd)
         {
             break; // client closed or error
         }
-        printf("Received: %s\n", rec_buffer);
+        printf("Received:%s\n", rec_buffer);
 
         run_task(rec_buffer, send_buffer);
+
+        if(strlen(send_buffer) == 0){
+            snprintf(send_buffer, sizeof(send_buffer), "No output from task.\n");
+        }
         send(new_sd, send_buffer, strlen(send_buffer), 0);
     }
 
     close(new_sd);
     printf("Client disconnected.\n");
+    printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+}
+
+void clean(){
+    if(sd_global!=-1){
+        close(sd_global);
+    }
+    printf("Server shutting down.\n");
+
 }
 
 int main(int argc, char *argv[])
@@ -113,6 +131,10 @@ int main(int argc, char *argv[])
         perror("socket");
         exit(1);
     }
+
+    sd_global=sd;
+    atexit(clean);
+    signal(SIGINT,exit);
 
     // Bind address/port
     server.sin_family = AF_INET;
@@ -152,7 +174,7 @@ int main(int argc, char *argv[])
         // only for printing: convert binary address in string ddd.ddd.ddd.ddd
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client.sin_addr, ip_str, INET_ADDRSTRLEN);
-
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
         printf("Accepted new client from %s\n", ip_str);
         handle_client(new_sd);
     }

@@ -1,5 +1,8 @@
 /*
+Mpiexec clone for sending tasks to remote/local smpd servers.
 
+Usage:
+gcc mpiex.c -o mpiex
 ./mpiex -hosts 1 45.79.112.203:4242 2 program.exe
 ./mpiex -processes 3 5000 5 5001 6 5002 7 program.exe
 
@@ -122,6 +125,7 @@ int main(int argc, char *argv[])
         }
 
         snprintf(sendbuf,sizeof(sendbuf),"%s %d\n", target_program, proc_num_arr[i]);
+        sendbuf[BUFFER_SIZE - 1] = '\0';
         send(sock_fd, sendbuf, strlen(sendbuf), 0);
 
         ssize_t bytes = recv(sock_fd, recbuf, BUFFER_SIZE - 1, 0);
@@ -132,7 +136,7 @@ int main(int argc, char *argv[])
         }
 
         recbuf[bytes] = '\0';
-        printf("Recieved:\n %s", recbuf);
+        printf("Received:\n%s", recbuf);
         close(sock_fd);
     }
 
