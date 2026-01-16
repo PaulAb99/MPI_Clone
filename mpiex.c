@@ -1,7 +1,7 @@
 /*
 
 ./mpiex -hosts 1 45.79.112.203:4242 2 program.exe
-./mpiex -processes 2 5000 5 5001 6 program.exe
+./mpiex -processes 3 5000 5 5001 6 5002 7 program.exe
 
 */
 
@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 int remote_host = 0; // host mode 1/process mode 0
 int N;
 
@@ -81,17 +81,19 @@ int connect_to_server(int nb)
         printf("Socket creation failed\n");
         return sock_fd;
     }
+
+    char ip_str[16];
+    inet_ntop(AF_INET,&server_addr[nb].sin_addr,ip_str,sizeof(ip_str));
     // Connect to server
     if (connect(sock_fd, (struct sockaddr *)&server_addr[nb], sizeof(struct sockaddr)) == -1)
     {   
-        char ip_str[16];
-        inet_ntop(AF_INET,&server_addr[nb].sin_addr,ip_str,sizeof(ip_str));
-        printf("Connection to server %s:%d failed\n", ip_str, ntohs(server_addr[nb].sin_port));
+        
+        printf("~~~ Connection to server %s:%d failed ~~~\n", ip_str, ntohs(server_addr[nb].sin_port));
         close(sock_fd);
         return -1;
     }
 
-    printf("Connected to server\n");
+    printf("~~~ Connection to server %s:%d success ~~~\n", ip_str, ntohs(server_addr[nb].sin_port));
     return sock_fd;
 }
 
