@@ -23,30 +23,34 @@ EchoClient 45.79.112.203 4242
 #include <arpa/inet.h>
 
 #define BUFFER_SIZE 1024
-int mode_host = 0; // host mode 0/process mode 1
+#define PORT_MPIEX 1024
+int remote_host = 0; // host mode 1/process mode 0
 int N;
 
-typedef struct host_or_proc
-{
-    char ip[64];
-    int port;
-    int num;
-} server_data;
-server_data *servers;
-    
-int parse_cmd_args(int argc, char **argv)
+struct sockaddr_in *server_addr;
+int *proc_num_arr;
+
+void parse_cmd_args(int argc, char **argv)
 {
 
     N = atoi(argv[2]);
-    servers = malloc(N * sizeof(server_data));
- 
+    if (N <= 0 || N > (49150 - 1024))
+    {
+        fprintf(stderr, "N must be a positive number lower than %d so it can be registered\n", 49150 - 1024);
+        exit(1);
+    }
+    server_addr = malloc(N * sizeof(sockaddr_in));
+    proc_arr = malloc(N * sizeof(int));
+
     if (strcmp(argv[1], "-hosts") == 0)
     {
-        mode_host = 1;
+        printf("Client Mode: hosts\n");
+        remote_host = 1;
     }
     else if (strcmp(argv[1], "-processes") == 0)
     {
-        mode_host = 0;
+        printf("Client Mode: processes\n");
+        remote_host = 0;
     }
     else
     {
@@ -54,30 +58,31 @@ int parse_cmd_args(int argc, char **argv)
         exit(1);
     }
 
-    if (mode_host)
+    for (int i = 0; i < N; i++) // add data to server struct
     {
-        for (int i = 0; i < N; i++)
+        server_addr[i].sin_family = AF_INET;
+        proc_num_arr[i] = atoi(argv[4 + i * 2]);
+        server.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (remote_host)
         {
-            strcpy(servers[i].ip, argv[3 + i * 2]);
-            servers[i].port=6000;
-            servers[i].num = atoi(argv[4 + i * 2]);
-            printf("Host %s will run %d processes on port %d\n",servers[i].ip,servers[i].num,servers[i].port);
+            server_addr.sin_port = htons(5000);
+            strcpy(server_addr[i].sin_addr, argv[3 + i * 2]);
+            printf("Host %s will run %d processes on port %d\n", servers[i].ip, servers[i].num, servers[i].port);
         }
-    }
-    else{
-        for (int i = 0; i < N; i++)
-        {   
-            strcpy(servers[i].ip, "127.0.0.1");
-            servers[i].port=6000+i;
-            servers[i].num = atoi(argv[4 + i * 2]);
-            printf("Port %d will run %d processes on localhost\n",servers[i].port,servers[i].num);
+        else
+        {
+            server_addr.sin_port = htons(1025 + i);
+            strcpy(server_addr[i].sin_addr, "127.0.0.1");
+            printf("Localhost will run %d processes on port %d\n", servers[i].sin, servers[i].num);
         }
     }
 }
 
+// debug mode print to file a report with mutex
+
 int main(int argc, char *argv[])
 {
-    if (argc < 6 || argc != (atoi(argv[2]) * 2 + 4)) // 2do more robustly
+    if (argc < 6 || argc != (atoi(argv[2]) * 2 + 4) || argc >) // 2do more robustly
     {
         fprintf(stderr, "Usage 1: %s -hosts N IP1 N1 IP2 N2 ....  IP_N N_N your_program.exe\n", argv[0]);
         fprintf(stderr, "Usage 2: %s -processes N port_1 N1 port_2 N2 .... port_N N_N your_program.exe\n", argv[0]);
@@ -86,11 +91,8 @@ int main(int argc, char *argv[])
 
     parse_cmd_args(argc, argv);
 
-    char *server_ip = argv[1];
-    int port = atoi(argv[2]);
-
     int sock_fd;
-    struct sockaddr_in server_addr;
+    struct sockaddr_in server_addr; /// fac parse simplu cu select si dupa un upgrade de queue
     char buffer[BUFFER_SIZE];
 
     // Create socket
@@ -99,9 +101,6 @@ int main(int argc, char *argv[])
         perror("socket");
         exit(1);
     }
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port);
 
     // Server IP was given as string; Convert IP string to binary
     if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0)
@@ -145,6 +144,7 @@ int main(int argc, char *argv[])
     }
 
     close(sock_fd);
-    free(servers);
+    free(server_addr);
+    free(proc_num_arr);
     return 0;
 }
