@@ -1,15 +1,13 @@
 /*
 
-Example: TCP Sockets - Concurrent Server
+Example: TCP Sockets - Iterative Server
 Echo Server: replies back every received message
-Concurrent Server: handles multiple client connections at a time,
-creates a process for every client
+Iterative Server: handles one client connection at a time
 
 */
 
 #include <sys/types.h>
 #include <sys/socket.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,8 +27,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    int sd, new_sd, client_len;
+    int sd, new_sd;
     struct sockaddr_in server, client;
+    int client_len = sizeof(client);
 
     int port = atoi(argv[1]);
 
@@ -64,7 +63,7 @@ int main(int argc, char *argv[])
 
     printf("Server started on port %d\n", port);
 
-    // Main loop: accept clients concurrently
+    // Main loop: accept clients sequentially
     while (1)
     {
 
@@ -81,47 +80,33 @@ int main(int argc, char *argv[])
         inet_ntop(AF_INET, &client.sin_addr, ip_str, INET_ADDRSTRLEN);
 
         printf("Accepted new client from %s\n", ip_str);
-      
-        int childpid;
-        if ((childpid = fork()) == 0) // Create a new process to handle this client
-        { // if itâs 0, itâs child process
-
-            printf("Child process created for dealing with client requests\n");
-
-            // child process closes listening socket
-            close(sd);
-
-            handle_client(new_sd);
-            exit(0);
-        }
-        close(new_sd); // parent process closes communication socket, continues to accept
-      }
-	close(sd);
-        return 0;
+        handle_client(new_sd);
     }
+    close(sd);
+    return 0;
+}
 
-    void handle_client(int new_sd)
+void handle_client(int new_sd)
+{
+    char buffer[BUFFER_SIZE];
+
+    // Read lines and echo back
+    // Use new_sd the communication socket to exchange data with client
+    while (1)
     {
-        // Read lines and echo back
-        // Use new_sd the communication socket to exchange data with client
-        char buffer[BUFFER_SIZE];
+        memset(buffer, 0, BUFFER_SIZE);
+        ssize_t bytes = recv(new_sd, buffer, BUFFER_SIZE - 1, 0);
 
-        while (1)
+        if (bytes <= 0)
         {
-
-            memset(buffer, 0, BUFFER_SIZE); //fill with zeros to make buffer null-terminated
-            ssize_t bytes = recv(new_sd, buffer, BUFFER_SIZE - 1, 0);
-
-            if (bytes <= 0)
-            {
-                break; // client closed or error
-            }
-
-            printf("Received: %s\n", buffer); //is null-terminated string 
-
-            send(new_sd, buffer, bytes, 0);
+            break; // client closed or error
         }
 
-        close(new_sd);
-        printf("Client disconnected.\n");
+        printf("Received: %s\n", buffer);
+
+        send(new_sd, buffer, bytes, 0);
     }
+
+    close(new_sd);
+    printf("Client disconnected.\n");
+}
