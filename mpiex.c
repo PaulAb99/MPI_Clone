@@ -4,7 +4,7 @@ Mpiexec clone for sending tasks to remote/local smpd servers.
 Usage:
 gcc mpiex.c -o mpiex
 ./mpiex -hosts 1 45.79.112.203:4242 2 program.exe
-./mpiex -processes 3 5000 5 5001 6 5002 7 program.exe
+./mpiex -processes 3 5000 5 5001 6 5002 7000 program.exe
 
 */
 
@@ -13,6 +13,7 @@ gcc mpiex.c -o mpiex
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
 #define BUFFER_SIZE 4096
 #define MAX_PORT_NB 49151 - 1024
@@ -21,6 +22,8 @@ int N;
 
 struct sockaddr_in *server_addr;
 int *proc_num_arr;
+
+char *target_program;
 
 void parse_cmd_args(int argc, char **argv)
 {
@@ -52,20 +55,20 @@ void parse_cmd_args(int argc, char **argv)
 
     int port;
     for (int i = 0; i < N; i++) // add data to server struct
-    {   
-        //process nb 
-        int proc_pos=4 + i * 2;
+    {
+        // process nb
+        int proc_pos = 4 + i * 2;
         proc_num_arr[i] = atoi(argv[proc_pos]);
 
-        //address port
-        
+        // address port
+
         server_addr[i].sin_family = AF_INET;
         server_addr[i].sin_addr.s_addr = htonl(INADDR_ANY);
-    
-        int port_pos=3 + i * 2;
+
+        int port_pos = 3 + i * 2;
 
         if (remote_host)
-        {   
+        {
             char tmp[64];
             strcpy(tmp, argv[port_pos]);
             tmp[sizeof(tmp) - 1] = '\0';
@@ -86,7 +89,7 @@ void parse_cmd_args(int argc, char **argv)
             server_addr[i].sin_port = htons(port);
 
             inet_pton(AF_INET, "127.0.0.1", &server_addr[i].sin_addr);
-            
+
             printf("127.0.0.1:%d will launch %d copies of %s\n", port, proc_num_arr[i], argv[argc - 1]);
         }
     }
@@ -117,10 +120,50 @@ int connect_to_server(int nb)
     return sock_fd;
 }
 
+void *thread_server(void *arg)
+{
+    int i = *((int *)arg);
+    free(arg);
+
+    int sock_fd;
+    char sendbuf[BUFFER_SIZE];
+    char recbuf[BUFFER_SIZE];
+
+    if ((sock_fd = connect_to_server(i)) == -1)
+    {
+        pthread_exit(NULL);
+    }
+
+    // send rec logic
+    snprintf(sendbuf, sizeof(sendbuf), "%s %d\n", target_program, proc_num_arr[i]);
+    sendbuf[BUFFER_SIZE - 1] = '\0';
+    send(sock_fd, sendbuf, strlen(sendbuf), 0);
+
+    memset(recbuf, 0, BUFFER_SIZE);
+    ssize_t bytes = recv(sock_fd, recbuf, BUFFER_SIZE - 1, 0);
+
+    if (bytes <= 0)
+    {
+        printf("Server closed connection.\n");
+    }
+    else
+    {   
+        char ip_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &server_addr[i].sin_addr, ip_str, sizeof(ip_str));
+        int port= ntohs(server_addr[i].sin_port);
+        
+        recbuf[bytes] = '\0';
+        printf("Received from server %s:%d the following:\n%s", ip_str, port,recbuf);
+    }
+
+    close(sock_fd);
+    pthread_exit(NULL);
+}
+
 int main(int argc, char *argv[])
-{   
-    int N_expected=atoi(argv[2]) * 2 + 4;
-    if (argc < 6 || argc != N_expected|| argc > (MAX_PORT_NB)) // 2do more robustly
+{
+    int N_expected = atoi(argv[2]) * 2 + 4;
+    if (argc < 6 || argc != N_expected || argc > (MAX_PORT_NB)) 
     {
         fprintf(stderr, "Usage 1: %s -hosts N IP1 N1 IP2 N2 ....  IP_N N_N your_program.exe\n", argv[0]);
         fprintf(stderr, "Usage 2: %s -processes N port_1 N1 port_2 N2 .... port_N N_N your_program.exe\n", argv[0]);
@@ -128,39 +171,20 @@ int main(int argc, char *argv[])
     }
 
     parse_cmd_args(argc, argv);
-    char *target_program = argv[argc - 1];
+    target_program = argv[argc - 1];
 
     // send to smpd servers
+    pthread_t threads[N];
+
     for (int i = 0; i < N; i++)
     {
-        int sock_fd;
-        char sendbuf[BUFFER_SIZE];
-        char recbuf[BUFFER_SIZE];
-
-        if ((sock_fd = connect_to_server(i)) == -1)
-        {
-            continue;
-        }
-        
-        //send rec logic
-        snprintf(sendbuf, sizeof(sendbuf), "%s %d\n", target_program, proc_num_arr[i]);
-        sendbuf[BUFFER_SIZE - 1] = '\0';
-        send(sock_fd, sendbuf, strlen(sendbuf), 0);
-
-        memset(recbuf, 0, BUFFER_SIZE);
-        ssize_t bytes = recv(sock_fd, recbuf, BUFFER_SIZE - 1, 0);
-
-        if (bytes <= 0)
-        {
-            printf("Server closed connection.\n");
-            close(sock_fd);
-            continue;
-        }
-
-        recbuf[bytes] = '\0';
-        printf("Received:\n%s", recbuf);
-
-        close(sock_fd);
+        int *arg = malloc(sizeof(*arg));
+        *arg = i;
+        pthread_create(&threads[i], NULL, thread_server, arg);
+    }
+    for (int i = 0; i < N; i++)
+    {
+        pthread_join(threads[i], NULL);
     }
 
     free(server_addr);
