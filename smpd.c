@@ -38,7 +38,7 @@ void run_task(char *recBuf, char *sendBuf)
         return;
     }
 
-    
+    pid_t pids[copies];
     for (int i = 0; i < copies; i++)
     {
         pid_t pid = fork();
@@ -46,6 +46,7 @@ void run_task(char *recBuf, char *sendBuf)
         {
 
             dup2(pipefd[1], STDOUT_FILENO);
+            dup2(pipefd[1], STDERR_FILENO);
             close(pipefd[0]);
             close(pipefd[1]);
 
@@ -56,23 +57,53 @@ void run_task(char *recBuf, char *sendBuf)
             perror("execl");
             exit(1);
         }
+        else if (pid > 0)
+        {
+            pids[i] = pid;
+        }
+        else
+        {
+            perror("fork");
+            close(pipefd[0]);
+            close(pipefd[1]);
+            return;
+        }
     }
+
+
     close(pipefd[1]);
     char temp[TEMP_BUFFER_SIZE];
     int n;
+    int overflow=0;
+
     while ((n=read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
     {   
-        temp[n] = '\0';
         int remaining = BUFFER_SIZE - strlen(sendBuf) - 1;
-        strncat(sendBuf, temp, remaining);
+        if(remaining <=0){
+            overflow=1;
+            break;
+        }
+        if(n > remaining){
+            n = remaining;
+        }
+        temp[n] = '\0';
+        strncat(sendBuf, temp, n);
     }
 
     close(pipefd[0]);
-    
+
+    if(overflow){
+        for(int i=0;i<copies;i++){
+            kill(pids[i], SIGKILL); 
+        }
+        char *err_message="\nAborting, truncated output (too many processes for buffer size)\n";
+        sendBuf[BUFFER_SIZE - strlen(err_message)-1] = '\0';
+        strncat(sendBuf, err_message, BUFFER_SIZE - strlen(sendBuf) - 1);
+    }
 
     for (int i = 0; i < copies; i++)
     {
-        wait(NULL);
+        waitpid(pids[i],NULL,0);
     }
 }
 
