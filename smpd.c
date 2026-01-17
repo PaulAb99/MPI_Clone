@@ -16,16 +16,18 @@ gcc smpd.c -o smpd
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <wait.h>
 #define BUFFER_SIZE 4096
 #define TEMP_BUFFER_SIZE 256
 
-int sd_global=-1;
+int sd_global = -1;
 
 void run_task(char *recBuf, char *sendBuf)
 {
     char *exec = strtok((char *)recBuf, " ");
     int copies = atoi(strtok(NULL, " "));
-    if(!exec||!copies){
+    if (!exec || !copies)
+    {
         return;
     }
     char path[256];
@@ -50,6 +52,17 @@ void run_task(char *recBuf, char *sendBuf)
             close(pipefd[0]);
             close(pipefd[1]);
 
+            char env_buf[16];
+            snprintf(env_buf, sizeof(env_buf), "%d", i);
+            setenv("MYMPI_RANK", env_buf, 1);
+
+            snprintf(env_buf, sizeof(env_buf), "%d", copies);
+            setenv("MYMPI_SIZE", env_buf, 1);
+
+            snprintf(env_buf, sizeof(env_buf), "%d", ntohs(sd_global));
+            setenv("MYMPI_PORT", env_buf, 1);
+            setenv("MYMPI_HOST", "127.0.0.1", 1);
+
             execlp(path, path, NULL);
 
             close(pipefd[0]);
@@ -70,20 +83,21 @@ void run_task(char *recBuf, char *sendBuf)
         }
     }
 
-
     close(pipefd[1]);
     char temp[TEMP_BUFFER_SIZE];
     int n;
-    int overflow=0;
+    int overflow = 0;
 
-    while ((n=read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
-    {   
+    while ((n = read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
+    {
         int remaining = BUFFER_SIZE - strlen(sendBuf) - 1;
-        if(remaining <=0){
-            overflow=1;
+        if (remaining <= 0)
+        {
+            overflow = 1;
             break;
         }
-        if(n > remaining){
+        if (n > remaining)
+        {
             n = remaining;
         }
         temp[n] = '\0';
@@ -92,18 +106,20 @@ void run_task(char *recBuf, char *sendBuf)
 
     close(pipefd[0]);
 
-    if(overflow){
-        for(int i=0;i<copies;i++){
-            kill(pids[i], SIGKILL); 
+    if (overflow)
+    {
+        for (int i = 0; i < copies; i++)
+        {
+            kill(pids[i], SIGKILL);
         }
-        char *err_message="\nAborting, truncated output (too many processes for buffer size)\n";
-        sendBuf[BUFFER_SIZE - strlen(err_message)-1] = '\0';
+        char *err_message = "\nAborting, truncated output (too many processes for buffer size)\n";
+        sendBuf[BUFFER_SIZE - strlen(err_message) - 1] = '\0';
         strncat(sendBuf, err_message, BUFFER_SIZE - strlen(sendBuf) - 1);
     }
 
     for (int i = 0; i < copies; i++)
     {
-        waitpid(pids[i],NULL,0);
+        waitpid(pids[i], NULL, 0);
     }
 }
 
@@ -120,13 +136,14 @@ void handle_client(int new_sd)
 
         if (bytes <= 0)
         {
-            break; 
+            break;
         }
         printf("Received:%s\n", rec_buffer);
 
         run_task(rec_buffer, send_buffer);
 
-        if(strlen(send_buffer) == 0){
+        if (strlen(send_buffer) == 0)
+        {
             snprintf(send_buffer, sizeof(send_buffer), "No output from task.\n");
         }
         send(new_sd, send_buffer, strlen(send_buffer), 0);
@@ -137,12 +154,13 @@ void handle_client(int new_sd)
     printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 }
 
-void clean(){
-    if(sd_global!=-1){
+void clean()
+{
+    if (sd_global != -1)
+    {
         close(sd_global);
     }
     printf("Server shutting down.\n");
-
 }
 
 int main(int argc, char *argv[])
@@ -165,9 +183,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    sd_global=sd;
+    sd_global = sd;
     atexit(clean);
-    signal(SIGINT,exit);
+    signal(SIGINT, exit);
 
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = htonl(INADDR_ANY);
