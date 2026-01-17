@@ -30,9 +30,11 @@ void run_task(char *recBuf, char *sendBuf)
     {
         return;
     }
+
     char path[256];
     snprintf(path, sizeof(path), "./bin/%s", exec);
     printf("Executing %d copies of %s \n", copies, path);
+
     int pipefd[2];
     if (pipe(pipefd) == -1)
     {
@@ -65,8 +67,7 @@ void run_task(char *recBuf, char *sendBuf)
 
             execlp(path, path, NULL);
 
-            close(pipefd[0]);
-            close(pipefd[1]);
+            
             perror("execl");
             exit(1);
         }

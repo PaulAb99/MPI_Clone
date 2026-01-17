@@ -4,8 +4,8 @@ Mpiexec clone for sending tasks to remote/local smpd servers.
 Usage:
 gcc mpiex.c -o mpiex
 ./mpiex -hosts 1 45.79.112.203:4242 2 program.exe
-./mpiex -processes 3 5000 5 5001 6 5002 7000 program.exe
-
+./mpiex -processes 3 5000 5 5001 6 5002 7000 program
+./mpiex -processes 3 5000 5 5001 6 5002 7000 mpi_program
 */
 
 #include <stdio.h>
@@ -98,16 +98,17 @@ void parse_cmd_args(int argc, char **argv)
 int connect_to_server(int nb)
 {
     int sock_fd;
-    // Create socket
+    // create socket
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
-        printf("Socket creation failed\n");
+        printf("Socket failed\n");
         return sock_fd;
     }
 
     char ip_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &server_addr[nb].sin_addr, ip_str, sizeof(ip_str));
-    // Connect to server
+
+    // connect to server
     if (connect(sock_fd, (struct sockaddr *)&server_addr[nb], sizeof(struct sockaddr_in)) == -1)
     {
 
@@ -115,8 +116,11 @@ int connect_to_server(int nb)
         close(sock_fd);
         return -1;
     }
+    else
+    {
+        printf("~~~ Connection to server %s:%d success ~~~\n", ip_str, ntohs(server_addr[nb].sin_port));
+    }
 
-    printf("~~~ Connection to server %s:%d success ~~~\n", ip_str, ntohs(server_addr[nb].sin_port));
     return sock_fd;
 }
 
@@ -147,13 +151,13 @@ void *thread_server(void *arg)
         printf("Server closed connection.\n");
     }
     else
-    {   
+    {
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &server_addr[i].sin_addr, ip_str, sizeof(ip_str));
-        int port= ntohs(server_addr[i].sin_port);
-        
+        int port = ntohs(server_addr[i].sin_port);
+
         recbuf[bytes] = '\0';
-        printf("Received from server %s:%d the following:\n%s", ip_str, port,recbuf);
+        printf("Received from server %s:%d the following:\n%s", ip_str, port, recbuf);
     }
 
     close(sock_fd);
@@ -163,7 +167,7 @@ void *thread_server(void *arg)
 int main(int argc, char *argv[])
 {
     int N_expected = atoi(argv[2]) * 2 + 4;
-    if (argc < 6 || argc != N_expected || argc > (MAX_PORT_NB)) 
+    if (argc < 6 || argc != N_expected || argc > (MAX_PORT_NB))
     {
         fprintf(stderr, "Usage 1: %s -hosts N IP1 N1 IP2 N2 ....  IP_N N_N your_program.exe\n", argv[0]);
         fprintf(stderr, "Usage 2: %s -processes N port_1 N1 port_2 N2 .... port_N N_N your_program.exe\n", argv[0]);
@@ -173,9 +177,9 @@ int main(int argc, char *argv[])
     parse_cmd_args(argc, argv);
     target_program = argv[argc - 1];
 
-    // send to smpd servers
+    // send to smpd servers part
     pthread_t threads[N];
-
+    
     for (int i = 0; i < N; i++)
     {
         int *arg = malloc(sizeof(*arg));
