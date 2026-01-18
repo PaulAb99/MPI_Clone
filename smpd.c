@@ -27,8 +27,13 @@ void run_task(char *recBuf, char *sendBuf)
 {
     char *exec = strtok((char *)recBuf, " ");
     int copies = atoi(strtok(NULL, " "));
-    if (!exec || !copies)
+    if (!exec)
     {
+        return;
+    }
+    if (copies <= 0 || copies > 100)
+    {
+        snprintf(sendBuf, BUFFER_SIZE, "Invalid nb of copies (%d) should be [1-100]\n", copies);
         return;
     }
 
@@ -62,13 +67,12 @@ void run_task(char *recBuf, char *sendBuf)
             snprintf(env_buf, sizeof(env_buf), "%d", copies);
             setenv("MYMPI_SIZE", env_buf, 1);
 
-            snprintf(env_buf, sizeof(env_buf), "%d", port+10000);
+            snprintf(env_buf, sizeof(env_buf), "%d", port + 10000);
             setenv("MYMPI_PORT", env_buf, 1);
             setenv("MYMPI_HOST", "127.0.0.1", 1);
 
             execlp(path, path, NULL);
 
-            
             perror("execl");
             exit(1);
         }
@@ -86,38 +90,23 @@ void run_task(char *recBuf, char *sendBuf)
     }
 
     close(pipefd[1]);
+    int total = 0;
+    int bytes;
+    int sendBuf_size = BUFFER_SIZE;
     char temp[TEMP_BUFFER_SIZE];
-    int n;
-    int overflow = 0;
 
-    while ((n = read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
+    while ((bytes = read(pipefd[0], &temp, TEMP_BUFFER_SIZE)) > 0)
     {
-        int remaining = BUFFER_SIZE - strlen(sendBuf) - 1;
-        if (remaining <= 0)
+        if (total + bytes >= sendBuf_size)
         {
-            overflow = 1;
-            break;
+            sendBuf_size += BUFFER_SIZE;
+            sendBuf = realloc(sendBuf, sendBuf_size);
         }
-        if (n > remaining)
-        {
-            n = remaining;
-        }
-        temp[n] = '\0';
-        strncat(sendBuf, temp, n);
+        memcpy(sendBuf + total, temp, bytes);
+        total += bytes;
     }
-
+    sendBuf[total] = '\0';
     close(pipefd[0]);
-
-    if (overflow)
-    {
-        for (int i = 0; i < copies; i++)
-        {
-            kill(pids[i], SIGKILL);
-        }
-        char *err_message = "\nAborting truncated output (too many processes for buffer size)\n";
-        sendBuf[BUFFER_SIZE - strlen(err_message) - 1] = '\0';
-        strncat(sendBuf, err_message, BUFFER_SIZE - strlen(sendBuf) - 1);
-    }
 
     for (int i = 0; i < copies; i++)
     {
@@ -128,12 +117,11 @@ void run_task(char *recBuf, char *sendBuf)
 void handle_client(int new_sd)
 {
     char rec_buffer[BUFFER_SIZE];
-    char send_buffer[BUFFER_SIZE];
 
     while (1)
     {
         memset(rec_buffer, 0, BUFFER_SIZE);
-        memset(send_buffer, 0, BUFFER_SIZE);
+        char *send_buffer = malloc(BUFFER_SIZE);
         ssize_t bytes = recv(new_sd, rec_buffer, BUFFER_SIZE - 1, 0);
 
         if (bytes <= 0)
@@ -146,12 +134,14 @@ void handle_client(int new_sd)
 
         if (strlen(send_buffer) == 0)
         {
-            snprintf(send_buffer, sizeof(send_buffer), "No output from task.\n");
+            snprintf(send_buffer, 64, "No output from task.\n");
         }
         send(new_sd, send_buffer, strlen(send_buffer), 0);
+        free(send_buffer);
+        close(new_sd);
     }
+    
 
-    close(new_sd);
     printf("Client disconnected.\n");
     printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 }

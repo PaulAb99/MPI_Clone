@@ -3,9 +3,11 @@ Mpiexec clone for sending tasks to remote/local smpd servers.
 
 Usage:
 gcc mpiex.c -o mpiex
+preferably n1/nn <=100
 ./mpiex -hosts 1 45.79.112.203:4242 2 program.exe
 ./mpiex -processes 3 5000 5 5001 6 5002 7000 program
-./mpiex -processes 3 5000 5 5001 6 5002 7000 mpi_program
+./mpiex -processes 3 5000 50 5001 10 5002 30 mpi_program
+./mpiex -processes 3 5000 -5 5001 6 5002 700 mpi_program
 */
 
 #include <stdio.h>
@@ -16,7 +18,7 @@ gcc mpiex.c -o mpiex
 #include <pthread.h>
 
 #define BUFFER_SIZE 4096
-#define MAX_PORT_NB 49151 - 1024
+#define MAX_PORT_NB 30000
 int remote_host = 0; // host mode 1/process mode 0
 int N;
 
@@ -98,17 +100,16 @@ void parse_cmd_args(int argc, char **argv)
 int connect_to_server(int nb)
 {
     int sock_fd;
-    // create socket
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
-        printf("Socket failed\n");
+        printf("socket fail\n");
         return sock_fd;
     }
 
     char ip_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &server_addr[nb].sin_addr, ip_str, sizeof(ip_str));
 
-    // connect to server
+
     if (connect(sock_fd, (struct sockaddr *)&server_addr[nb], sizeof(struct sockaddr_in)) == -1)
     {
 
@@ -131,7 +132,6 @@ void *thread_server(void *arg)
 
     int sock_fd;
     char sendbuf[BUFFER_SIZE];
-    char recbuf[BUFFER_SIZE];
 
     if ((sock_fd = connect_to_server(i)) == -1)
     {
@@ -143,24 +143,34 @@ void *thread_server(void *arg)
     sendbuf[BUFFER_SIZE - 1] = '\0';
     send(sock_fd, sendbuf, strlen(sendbuf), 0);
 
-    memset(recbuf, 0, BUFFER_SIZE);
-    ssize_t bytes = recv(sock_fd, recbuf, BUFFER_SIZE - 1, 0);
-
-    if (bytes <= 0)
+    char *recbuf = malloc(BUFFER_SIZE);
+    int bytes, total = 0;
+    int recbuf_size = BUFFER_SIZE;
+    while ((bytes = recv(sock_fd, recbuf+total, recbuf_size-total-1, 0)) > 0)
     {
-        printf("Server closed connection.\n");
+        total += bytes;
+        if (total+1 >= recbuf_size)
+        {
+            recbuf_size += BUFFER_SIZE;
+            char *tmp = realloc(recbuf, recbuf_size);
+            recbuf = tmp;
+        }
+        
     }
-    else
+    if (bytes == -1)
     {
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &server_addr[i].sin_addr, ip_str, sizeof(ip_str));
-        int port = ntohs(server_addr[i].sin_port);
-
-        recbuf[bytes] = '\0';
-        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-        printf("Received from server %s:%d the following:\n%s", ip_str, port, recbuf);
-        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        perror("server closed connection");
     }
+
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &server_addr[i].sin_addr, ip_str, sizeof(ip_str));
+    int port = ntohs(server_addr[i].sin_port);
+
+    recbuf[total] = '\0';
+    printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    printf("Received from server %s:%d the following:\n%s", ip_str, port, recbuf);
+    printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    free(recbuf);
 
     close(sock_fd);
     pthread_exit(NULL);
@@ -181,7 +191,7 @@ int main(int argc, char *argv[])
 
     // send to smpd servers part
     pthread_t threads[N];
-    
+
     for (int i = 0; i < N; i++)
     {
         int *arg = malloc(sizeof(*arg));

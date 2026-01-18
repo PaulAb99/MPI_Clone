@@ -1,6 +1,7 @@
 
 /*
 the mpi functions
+compile:
 gcc -c ./myMPI/mympi.c -o ./myMPI/mympi.o
 ar rcs ./myMPI/libmympi.a ./myMPI/mympi.o
 */
@@ -13,7 +14,6 @@ ar rcs ./myMPI/libmympi.a ./myMPI/mympi.o
 
 #define BUUFER_SIZE 256
 
-// init vals
 static int rank = -1;
 static int size = -1;
 static int serv_sock = -1;
@@ -42,7 +42,8 @@ void mympi_init()
     {
         port = atoi(portEnv);
     }
-    else{
+    else
+    {
         port = -1;
     }
 
@@ -63,7 +64,6 @@ void mympi_init()
         exit(1);
     }
 
-
     // socket part split
     if (rank == 0)
     {
@@ -78,10 +78,6 @@ void mympi_init()
         serv_addr.sin_port = htons(port);
         serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-        // set socket behavior to be reused
-        int sock_opt = 1; // en
-        setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &sock_opt, sizeof(int));
-
         if (bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
         {
             printf("rank %d cant bind %s:%d\n", rank, host, port);
@@ -89,20 +85,6 @@ void mympi_init()
             close(serv_sock);
             exit(1);
         }
-
-        // eph socket
-        // socklen_t addr_len = sizeof(serv_addr);
-        // if (getsockname(serv_sock, (struct sockaddr *)&serv_addr, &addr_len) == -1)
-        // {
-        //     perror("getsockname");
-        //     close(serv_sock);
-        //     exit(1);
-        // }
-        // port = ntohs(serv_addr.sin_port);
-        // printf("rank 0 is on eph port %d\n", port);
-        // char port_buf[16];
-        // snprintf(port_buf, sizeof(port_buf), "%d", port);
-        // setenv("MYMPI_PORT", port_buf, 1);
 
         if (listen(serv_sock, 5) == -1)
         {
@@ -157,20 +139,11 @@ void mympi_init()
 
         child_addr.sin_family = AF_INET;
 
-        // eph port 2 childs
-        // char *portEnv = getenv("MYMPI_PORT");
-        // if (!portEnv)
-        // {
-        //     printf("no port env var for kids found\n");
-        //     exit(1);
-        // }
-
-        // port = atoi(portEnv);
         child_addr.sin_port = htons(port);
 
         inet_pton(AF_INET, host, &child_addr.sin_addr);
 
-        int iter = 100;
+        int iter = 300;
         while (connect(child_sock, (struct sockaddr *)&child_addr, sizeof(child_addr)) == -1 && iter > 0)
         {
             usleep(100000);
@@ -199,42 +172,28 @@ int mympi_size()
 void mympi_send(const void *sBuf, int count, int dst)
 {
 
-    if (rank == 0)
-    {
-        send(child_arr[dst], sBuf, count, 0);
-    }
-    else
+    if (rank)
     {
         send(child_sock, sBuf, count, 0);
     }
+    send(child_arr[dst], sBuf, count, 0);
 }
 
 void mympi_recv(void *rBuf, int count, int src)
 {
 
-    if (rank == 0)
-    {
-        recv(child_arr[src], rBuf, count, 0);
-    }
-    else
+    if (rank)
     {
         recv(child_sock, rBuf, count, 0);
     }
+
+    recv(child_arr[src], rBuf, count, 0);
 }
 
 void mympi_finalize()
 {
-    if (serv_sock != -1)
-    {
-        close(serv_sock);
-    }
 
-    if (child_sock != -1)
-    {
-        close(child_sock);
-    }
-    if (child_arr)
-    {
-        free(child_arr);
-    }
+    close(serv_sock);
+    close(child_sock);
+    free(child_arr);
 }
