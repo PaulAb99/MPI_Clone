@@ -157,7 +157,9 @@ void *thread_server(void *arg)
         int port = ntohs(server_addr[i].sin_port);
 
         recbuf[bytes] = '\0';
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
         printf("Received from server %s:%d the following:\n%s", ip_str, port, recbuf);
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     }
 
     close(sock_fd);

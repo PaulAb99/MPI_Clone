@@ -21,6 +21,7 @@ gcc smpd.c -o smpd
 #define TEMP_BUFFER_SIZE 256
 
 int sd_global = -1;
+int port;
 
 void run_task(char *recBuf, char *sendBuf)
 {
@@ -61,7 +62,7 @@ void run_task(char *recBuf, char *sendBuf)
             snprintf(env_buf, sizeof(env_buf), "%d", copies);
             setenv("MYMPI_SIZE", env_buf, 1);
 
-            snprintf(env_buf, sizeof(env_buf), "%d", ntohs(sd_global));
+            snprintf(env_buf, sizeof(env_buf), "%d", port+10000);
             setenv("MYMPI_PORT", env_buf, 1);
             setenv("MYMPI_HOST", "127.0.0.1", 1);
 
@@ -113,7 +114,7 @@ void run_task(char *recBuf, char *sendBuf)
         {
             kill(pids[i], SIGKILL);
         }
-        char *err_message = "\nAborting, truncated output (too many processes for buffer size)\n";
+        char *err_message = "\nAborting truncated output (too many processes for buffer size)\n";
         sendBuf[BUFFER_SIZE - strlen(err_message) - 1] = '\0';
         strncat(sendBuf, err_message, BUFFER_SIZE - strlen(sendBuf) - 1);
     }
@@ -176,7 +177,7 @@ int main(int argc, char *argv[])
     int sd, new_sd;
     struct sockaddr_in server, client;
     int client_len = sizeof(client);
-    int port = atoi(argv[1]);
+    port = atoi(argv[1]);
 
     if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
